@@ -1,0 +1,58 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check number parser
+        run: |
+          swiftc CallerLookup/PhoneNumber.swift CallerLookup/LookupService.swift Tests/main.swift -o parser-check
+          ./parser-check
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build app (unsigned)
+        run: |
+          xcodebuild \
+            -project CallerLookup.xcodeproj \
+            -scheme CallerLookup \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      # Ad-hoc signature only so signing tools accept the binary; your store re-signs it.
+      - name: Package IPA
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/CallerLookup.app"
+          # Without a launch screen iOS runs the app letterboxed at the old 3.5" size.
+          test -d "$APP_PATH/LaunchScreen.storyboardc"
+          plutil -p "$APP_PATH/Info.plist" | grep UILaunch
+          codesign --force --sign - --timestamp=none "$APP_PATH"
+          mkdir -p output/Payload
+          cp -R "$APP_PATH" output/Payload/
+          cd output
+          zip -qry CallerLookup.ipa Payload
+          ls -lh CallerLookup.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CallerLookup-ipa
+          path: output/CallerLookup.ipa
