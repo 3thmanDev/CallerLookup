@@ -12,17 +12,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check number parser
-        run: |
-          swiftc CallerLookup/PhoneNumber.swift CallerLookup/LookupService.swift Tests/main.swift -o parser-check
-          ./parser-check
-
       - name: Install XcodeGen
         run: brew install xcodegen
 
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # Errors are repeated as ::error:: annotations so they can be read without signing in to see the log.
       - name: Build app (unsigned)
         run: |
           xcodebuild \
@@ -35,7 +31,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build > xcodebuild.log 2>&1 || {
+              grep -E "error:" xcodebuild.log | sort -u | head -10 | sed 's/^/::error::/'
+              tail -40 xcodebuild.log
+              exit 1
+            }
 
       # Ad-hoc signature only so signing tools accept the binary; your store re-signs it.
       - name: Package IPA
@@ -56,3 +56,19 @@ jobs:
         with:
           name: CallerLookup-ipa
           path: output/CallerLookup.ipa
+
+      - name: Check number parser
+        if: always()
+        run: |
+          swiftc CallerLookup/PhoneNumber.swift CallerLookup/LookupService.swift Tests/main.swift -o parser-check > swiftc.log 2>&1 || {
+            grep -E "error:" swiftc.log | head -10 | sed 's/^/::error::/'
+            cat swiftc.log
+            exit 1
+          }
+          ./parser-check > parser.log 2>&1 || {
+            grep -E "FAIL|failed" parser.log | head -10 | sed 's/^/::error::/'
+            cat parser.log
+            exit 1
+          }
+          cat parser.log
+          echo "::notice::$(tail -1 parser.log)"
