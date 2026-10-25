@@ -50,11 +50,12 @@ enum LookupService: CaseIterable, Identifiable {
         case .google:
             guard !number.isService else { return nil }
             let query = number.searchSpellings.map { "\"\($0)\"" }.joined(separator: " OR ")
-            var components = URLComponents(string: "https://www.google.com/search")
-            components?.queryItems = [URLQueryItem(name: "q", value: query)]
+            guard var components = URLComponents(string: "https://www.google.com/search") else { return nil }
+            components.queryItems = [URLQueryItem(name: "q", value: query)]
             // URLComponents leaves "+" as is, and Google would read it as a space.
-            components?.percentEncodedQuery = components?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-            return components?.url
+            let encodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            components.percentEncodedQuery = encodedQuery
+            return components.url
         }
     }
 }
